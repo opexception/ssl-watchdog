@@ -182,27 +182,27 @@ disp_help()
 # Commands
 if [ $# -ge 1 ]
     then
-        debugit "Parsing command"
+        debugit DEBUG "Parsing command"
         if [ ${1#-} = $1 ]
             then
                 commandArg="$1"
                 shift
-                debugit "Command specified is: ${commandArg}"
+                debugit DEBUG "Command specified is: ${commandArg}"
 
                 case ${commandArg} in
                     yyyy)
-                        debugit "Recognized command: ${commandArg}"
+                        debugit DEBUG "Recognized command: ${commandArg}"
                     ;;
                     *)
-                        debugit "Unknown command: ${commandArg}"
-                        echo "${0}: Unknown command: ${commandArg}" >&2
+                        debugit DEBUG "Unknown command: ${commandArg}"
+                        debugit ERROR "Unknown command: ${commandarg}"
                         disp_help 1
                 esac
             else
                 commandArg="NULL"
         fi
     else
-        debugit "No command specified"
+        debugit DEBUG "No command specified"
         disp_help
 fi
 
@@ -306,6 +306,6 @@ shift $((OPTIND-1))
 # Arguments
 if [ $# -gt 0 ]
     then
-        debugit "Parsing arguments"
+        debugit DEBUG "Parsing arguments"
         #Set argument variables here, like arg_file=$1
 fi
