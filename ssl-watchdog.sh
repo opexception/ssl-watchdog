@@ -271,6 +271,9 @@ while getopts "${optspec}" opt
                     "4")
                         debug_level=4
                     ;;
+                    "")
+                        debug_level=1
+                    ;;
                     v*)
                         case "${OPTARG}" in
                             v)
@@ -309,3 +312,123 @@ if [ $# -gt 0 ]
         debugit DEBUG "Parsing arguments"
         #Set argument variables here, like arg_file=$1
 fi
+
+# Read in relevant environment variables, and assemble some needed paths.
+DATADIR="./"
+
+# Helper functions
+FindJava()
+    { # determine the path to the keytool java utility, and the java keystore we should be storing our certs in.
+    # TODO: Allow arguments to overwrite var with script args
+    # TODO: Create docstring for this funtion
+    # TODO: Decide if a separate function is needed to handle cacerts/keystore path
+    local java_dirs
+    local keystore
+    local keytool
+
+    java_dirs=( ${JAVA_HOME} ${JRE_HOME} /usr /usr/libexec/java_home /System/Library/Frameworks/JavaVM.framework/Versions/CurrentJDK/Home )
+    keystore="/lib/security/cacerts"
+    keytool="/bin/keytool"
+
+    for dir in ${java_dirs[@]}
+        do
+            debugit DEBUG "Looking for keytool in ${dir}${keytool}..."
+            if [ -x ${dir}${keytool} ]
+                then
+                    JAVA_DIR=${dir}
+                    debugit DEBUG "Found keytool in ${dir}${keytool}"
+                    break
+                else
+                    debugit DEBUG "Did not find keytool in ${dir}${keytool}"
+                    continue
+            fi
+            if [ -z "$JAVA_DIR" ]
+                then
+                    if [ -x ${keytool} ]
+                        then
+                            JAVA_PATH=$(2>/dev/null which java)
+                            JAVA_DIR=$(2>/dev/null dirname $JAVA_PATH)
+                            if [ -z "$JAVA_DIR" ]
+                                then
+                                    debugit DEBUG "JAVA_HOME=${JAVA_HOME}, JRE_HOME=${JRE_HOME}, JAVA_DIR=${JAVA_DIR}, JAVA_PATH=${JAVA_PATH}"
+                                    debugit INFO "Set the JAVA_HOME environment variable, any try again, or specify the path to your JRE/JDK with '-j /path/to/jdk'"
+                                    debugit ERROR "Could not determine the path to java."
+                                else
+                                    break
+                            fi
+                    fi
+            fi
+        done
+        KEYSTORE="${JAVA_DIR}/lib/security/cacerts"
+        KEYTOOL="${JAVA_DIR}/bin/keytool"
+        debugit INFO "Using ${KEYTOOL}, and ${KEYSTORE}"
+    }
+
+PullCert()
+    { # Pull SSL certificate from $server at $port
+      # First argument is expected to be a server name or IP address
+      # Second argument is expected to be the port to evaluate. Default port assumed to be 443
+      # Third Argument is the path to the java keytool executable
+      # Forth argument is the path to the output file of the certificate. Default is ./$server.cer
+
+    local server
+    local port
+    local tool
+    local outfile
+
+    if [ $# -lt 1 ]
+        then
+            debugit ERROR "INTERNAL ERROR - No server specified."
+            debugit DEBUG "there don't seem to be any arguments remaining for 'server'. Have the following args: '$@'"
+        else
+            debugit DEBUG "setting 'server' to $1"
+            server=$1
+            shift
+    fi
+    if [ $# -lt 1 ]
+        then
+            debugit DEBUG "there don't seem to be any arguments remaining for 'port'. Have the following args: '$@'"
+            debugit INFO "Using default port '443'"
+            port="443"
+        else
+            debugit DEBUG "setting 'port' to $1"
+            port=$1
+            shift
+    fi
+    if [ $# -lt 1 ]
+        then
+            debugit DEBUG "there don't seem to be any arguments remaining for 'tool'. Have the following args: '$@'"
+            debugit INFO "Using default keytool path '$JRE/bin/keytool'"
+            tool="$JRE/bin/keytool"
+        else
+            debugit DEBUG "setting 'tool' to $1"
+            tool=$1
+            shift
+    fi
+    if [ $# -lt 1 ]
+        then
+            debugit DEBUG "there don't seem to be any arguments remaining for 'outfile'. Have the following args: '$@'"
+            debugit INFO "Using default output path './${server}.cer'"
+            outfile=./${server}.cer
+        else
+            debugit DEBUG "setting 'outfile' to $1"
+            outfile=$1
+            shift
+    fi
+    fi
+        if [ $# -gt 0 ]
+        then
+            debugit ERROR "INTERNAL ERROR - Too many arguments to PullCert()."
+            debugit DEBUG "Have the following args: '$@'"
+    fi
+
+    debugit INFO "Will pull cert from ${server}:${port}"
+    ${keytool} -printcert -sslserver ${server}:${port} -rfc > ${outfile}
+    if (( $! != 0 ))
+        then
+            debugit ERROR "Unable to reliably store certificate."
+        else
+            deugit INFO "Certificate stored here: ${outfile}"
+            debugit DEBUG "$(cat ${outfile})"
+    fi
+    }
