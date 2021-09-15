@@ -22,7 +22,8 @@ FULL_DOMAIN=${HOSTNAME#*.}
 DOMAIN=${FULL_DOMAIN%%.*} 
 
 # Get a timestamp in UTC (in seconds since epoch) to avoid timezone ambiguity.
-NOW=$(date --utc +%s)
+
+NOW=$(date -u +%s)
 
 
 # use the "-v" argument to set debugging.
@@ -163,13 +164,21 @@ debugit()
 disp_help()
     { # Print script help to screen, and exit.
       # Optional argument will set exit value.
-        echo -e "This is help."
-        echo -e "usage: $0 {COMMAND} {OPTION} {ARGUMENTS}"
-        echo -e "Commands:"
+        echo -e "This is help.\n"
+        echo -e "\tUsage: $0 [COMMAND] {OPTIONS} [ARGUMENTS]"
+        echo -e "\nCommands:"
         echo -e "\tex\t- Example command"
-        echo -e "Options:"
+        echo -e "\nOptions:"
+        echo -e "\t--data|--data|-d\t- The directory used to store output data."
+        echo -e "\t--java|--jdk|--jre|-j\t- Path to the Java runtime. E.g. '/opt/java"
+        echo -e "\t--keystore|--cacerts|-k\t- the path to the java keystore (cacerts file) to operate on."
         echo -e "\t--opt_one|-o\t- Example option"
-        echo -e "Argument\t- File name"
+        echo -e "\t--opt_one|-o\t- Example option"
+        echo -e "\t--opt_one|-o\t- Example option"
+        echo -e "\t--opt_one|-o\t- Example option"
+        echo -e "\t--opt_one|-o\t- Example option"
+        echo -e "\nArgument\t- File name"
+        echo
         if [ $# = 1 ]
             then
                 if [[ "$1" =~ '^[0-9]+$' ]]
@@ -218,11 +227,53 @@ while getopts "${optspec}" opt
             -)
                 case "${OPTARG}" in
                     xxxx)
-                        opt_xxxx="${!OPTIND}"
+                        OPT_xxxx="${!OPTIND}"
                         (( OPTIND++ ))
                     ;;
                     xxxx=*)
-                        opt_xxxx=${OPTARG#*=}
+                        OPT_xxxx=${OPTARG#*=}
+                    ;;
+                    data|datadir)
+                        OPT_DATADIR="${!OPTIND}"
+                        (( OPTIND++ ))
+                    ;;
+                    data=*|datadir=*)
+                        OPT_DATADIR=${OPTARG#*=}
+                    ;;
+                    keystore|cacerts)
+                        OPT_KEYSTORE="${!OPTIND}"
+                        (( OPTIND++ ))
+                    ;;
+                    keystore=*|cacerts=*)
+                        OPT_KEYSTORE=${OPTARG#*=}
+                    ;;
+                    java|jre|jdk)
+                        OPT_JAVA="${!OPTIND}"
+                        (( OPTIND++ ))
+                    ;;
+                    java=*|jre=*|jdk=*)
+                        OPT_JAVA=${OPTARG#*=}
+                    ;;
+                    file)
+                        OPT_INFILE="${!OPTIND}"
+                        (( OPTIND++ ))
+                    ;;
+                    file=*)
+                        OPT_INFILE=${OPTARG#*=}
+                    ;;
+                    server)
+                        OPT_SERVER="${!OPTIND}"
+                        (( OPTIND++ ))
+                    ;;
+                    server=*)
+                        OPT_SERVER=${OPTARG#*=}
+                    ;;
+                    port)
+                        OPT_PORT="${!OPTIND}"
+                        (( OPTIND++ ))
+                    ;;
+                    port=*)
+                        OPT_PORT=${OPTARG#*=}
                     ;;
                     verbose)
                         debug_level="${!OPTIND}"
@@ -256,6 +307,24 @@ while getopts "${optspec}" opt
                         fi
                     ;;
                 esac
+            ;;
+            d)
+                OPT_DATADIR=$(OPTARG)
+            ;;
+            f)
+                OPT_JAVA=$(OPTARG)
+            ;;
+            j)
+                OPT_INFILE=$(OPTARG)
+            ;;
+            k)
+                OPT_KEYSTORE=$(OPTARG)
+            ;;
+            s)
+                OPT_SERVER=$(OPTARG)
+            ;;
+            p)
+                OPT_PORT=$(OPTARG)
             ;;
             v)
                 case ${OPTARG} in
@@ -309,11 +378,31 @@ while getopts "${optspec}" opt
     done
 shift $((OPTIND-1))
 
+# Convert comma separated list of servers to an array
+OPT_SERVER=( ${OPT_SERVER/,/ } )
+
 # Arguments
 if [ $# -gt 0 ]
     then
         debugit DEBUG "Parsing arguments"
-        #Set argument variables here, like arg_file=$1
+        ARG_INFILE=( ${OPT_INFILE[@]} )
+        while [ $# -gt 0 ]
+            do
+                if [ -r $1 ]
+                    then
+                        debugit DEBUG "File $1 exists and is readable."
+                        ARG_INFILE=( ${ARG_FILE[@]} $1)
+                    else
+                        debugit DEBUG "File '$1' either does not exist, or isn't readable."
+                        debugit INFO "Please ensure the file '$1' exists, and has correct permissions set."
+                        if [ ${#ARG_INFILE[@]} -gt 0 ]
+                            then debugit WARNING "Skipping unreadable file '$1'"
+                            elif [ ${#OPT_SERVER[@]} -gt 0 ]
+                                then debugit WARNING "Skipping unreadable file '$1'"
+                            else debugit ERROR "Cannot read file '$1'. Nothing left to do."
+                        fi
+                shift
+            done
 fi
 
 # Read in relevant environment variables, and do the corresponding setup.
@@ -323,6 +412,12 @@ if [ -z "$SSL_WATCHDOG_DATADIR" ]
         DATADIR="./"
     else
         DATADIR="$SSL_WATCHDOG_DATADIR"
+fi
+if [ -z "$SSL_WATCHDOG_CAPASSWORD" ]
+    then
+        CAPASSWORD="changeit"
+    else
+        CAPASSWORD="$SSL_WATCHDOG_CAPASSWORD"
 fi
 if [ ! -z $SSL_WATCHDOG_DEBUG ]
     then
