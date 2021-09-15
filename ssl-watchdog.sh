@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Scan for certificates on a given URL, catalog any certs found along with their expiration times.
-# Compate the results of the current run with saves results froma previous run to check for changes.
-# Give warning on epiry time, or certificate changes.
+# Compare the results of the current run with saves results from a previous run to check for changes.
+# Give warning on expiry time, or certificate changes.
 #
 # Author: Robert.Maracle
 #  
@@ -12,26 +12,29 @@
 ###############################################################################
 HOSTNAME=$(uname -n)
 
-# Remove the first ".", and everything after it from $HOSTNAME
+# Remove the first ".", and everything after it from $HOSTNAME. I.e. "mybox" will result from "mybox.mysite.company.com"
 SHORT_NAME=${HOSTNAME%%.*} 
 
- # Remove the first ".", and everything before it from $HOSTNAME
+ # Remove the first ".", and everything before it from $HOSTNAME. I.e. "mysite.company.com" will result from "mybox.mysite.company.com"
 FULL_DOMAIN=${HOSTNAME#*.}
 
-# Remove the first ".", and everything after it from $FULL_DOMAIN
+# Remove the first ".", and everything after it from $FULL_DOMAIN. I.e. "mysite" will result from "mybox.mysite.company.com"
 DOMAIN=${FULL_DOMAIN%%.*} 
 
-# Get a timestamp in UTC to avoid timezone conversion per region
+# Get a timestamp in UTC (in seconds since epoch) to avoid timezone ambiguity.
 NOW=$(date --utc +%s)
 
 
-# use the "-x" argument to set debugging.
-# Initial debug level. Will be overwritten by "-x" argument, once it has been parsed.
+# use the "-v" argument to set debugging.
+# Initial debug level. Will be overwritten by "-v" argument, once it has been parsed.
 #debug_level=0 # Silent. No additional debug output at all
 #debug_level=1 # Write only ERRORs to stderr
 #debug_level=2 # Write ERRORs to stderr, and WARNINGs to stdout
 #debug_level=3 # Write ERRORs to stderr, WARNINGs and INFOs to stdout
 debug_level=4 # Write ERRORs to stderr, WARNINGs, INFOs, and DEBUGs to stdout
+
+# Debug level can also be set via env var "SSL_WATCHDOG_DEBUG" to a value of 1 to 4. This will overwrite the default debug level set above.
+
 
 debugit()
     { # Output debug messages depending on how $debug_level is set.
@@ -313,8 +316,43 @@ if [ $# -gt 0 ]
         #Set argument variables here, like arg_file=$1
 fi
 
-# Read in relevant environment variables, and assemble some needed paths.
-DATADIR="./"
+# Read in relevant environment variables, and do the corresponding setup.
+
+if [ -z "$SSL_WATCHDOG_DATADIR" ]
+    then
+        DATADIR="./"
+    else
+        DATADIR="$SSL_WATCHDOG_DATADIR"
+fi
+if [ ! -z $SSL_WATCHDOG_DEBUG ]
+    then
+        case $SSL_WATCHDOG_DEBUG in
+            0)
+                debug_level=0
+                debugit DEBUG "debug_level set to '${debug_level}'"
+            ;;
+            1)
+                debug_level=1 
+                debugit DEBUG "debug_level set to '${debug_level}'"
+            ;;
+            2)
+                debug_level=2 
+                debugit DEBUG "debug_level set to '${debug_level}'"
+            ;;
+            3)
+                debug_level=3 
+                debugit DEBUG "debug_level set to '${debug_level}'"
+            ;;
+            4)
+                debug_level=4 
+                debugit DEBUG "debug_level set to '${debug_level}'"
+            ;;
+            *)
+                debugit WARNING "Debug level SSL_WATCHDOG_DEBUG='$SSL_WATCHDOG_DEBUG' is invalid!\n\tPlease ensure this env var is empty, or set to a valid level of 1 to 4.\n"
+            ;;
+        esac
+fi
+
 
 # Helper functions
 FindJava()
@@ -323,44 +361,41 @@ FindJava()
     # TODO: Create docstring for this funtion
     # TODO: Decide if a separate function is needed to handle cacerts/keystore path
     local java_dirs
-    local keystore
-    local keytool
+    local keystore_path
+    local keytool_path
 
     java_dirs=( ${JAVA_HOME} ${JRE_HOME} /usr /usr/libexec/java_home /System/Library/Frameworks/JavaVM.framework/Versions/CurrentJDK/Home )
-    keystore="/lib/security/cacerts"
-    keytool="/bin/keytool"
+    keystore_path="/lib/security/cacerts"
+    keytool_path="/bin/keytool"
 
     for dir in ${java_dirs[@]}
         do
-            debugit DEBUG "Looking for keytool in ${dir}${keytool}..."
+            debugit DEBUG "Looking for keytool in ${dir}${keytool_path}..."
             if [ -x ${dir}${keytool} ]
                 then
                     JAVA_DIR=${dir}
-                    debugit DEBUG "Found keytool in ${dir}${keytool}"
+                    debugit DEBUG "Found keytool in ${dir}${keytool_path}"
                     break
                 else
-                    debugit DEBUG "Did not find keytool in ${dir}${keytool}"
+                    debugit DEBUG "Did not find keytool in ${dir}${keytool_path}"
                     continue
             fi
             if [ -z "$JAVA_DIR" ]
                 then
-                    if [ -x ${keytool} ]
+                    JAVA_PATH=$(2>/dev/null which java)
+                    JAVA_DIR=$(2>/dev/null dirname $JAVA_PATH)
+                    if [ -z "$JAVA_DIR" ]
                         then
-                            JAVA_PATH=$(2>/dev/null which java)
-                            JAVA_DIR=$(2>/dev/null dirname $JAVA_PATH)
-                            if [ -z "$JAVA_DIR" ]
-                                then
-                                    debugit DEBUG "JAVA_HOME=${JAVA_HOME}, JRE_HOME=${JRE_HOME}, JAVA_DIR=${JAVA_DIR}, JAVA_PATH=${JAVA_PATH}"
-                                    debugit INFO "Set the JAVA_HOME environment variable, any try again, or specify the path to your JRE/JDK with '-j /path/to/jdk'"
-                                    debugit ERROR "Could not determine the path to java."
-                                else
-                                    break
-                            fi
+                            debugit DEBUG "JAVA_HOME=${JAVA_HOME}, JRE_HOME=${JRE_HOME}, JAVA_DIR=${JAVA_DIR}, JAVA_PATH=${JAVA_PATH}"
+                            debugit INFO "Set the JAVA_HOME environment variable, any try again, or specify the path to your JRE/JDK with '-j /path/to/jdk'"
+                            debugit ERROR "Could not determine the path to java."
+                        else
+                            break
                     fi
             fi
         done
-        KEYSTORE="${JAVA_DIR}/lib/security/cacerts"
-        KEYTOOL="${JAVA_DIR}/bin/keytool"
+        KEYSTORE="${JAVA_DIR}${keystore_path}"
+        KEYTOOL="${JAVA_DIR}${keytool_path}"
         debugit INFO "Using ${KEYTOOL}, and ${KEYSTORE}"
     }
 
