@@ -18,6 +18,7 @@
 ## Initialize some variables
 ###############################################################################
 HOSTNAME=$(uname -n)
+# TODO: Expect hostname to be FQDN, this may not always be true, so handle it: Get proper FQDN.
 
 # Remove the first ".", and everything after it from $HOSTNAME. I.e. "mybox" will result from "mybox.mysite.company.com"
 SHORT_NAME=${HOSTNAME%%.*} 
@@ -43,8 +44,8 @@ DEF_DEBUG=4 # Write ERRORs to stderr, WARNINGs, INFOs, and DEBUGs to stdout
 
 DEF_DATADIR="."
 DEF_INFILE=""
-DEF_JAVA=""
-DEF_KEYSTORE=""
+DEF_JAVA="${JAVA_HOME}"
+DEF_KEYSTORE="${JAVA_HOME}/lib/security/cacerts"
 DEF_PORT="443"
 DEF_SERVER="${HOSTNAME}"
 DEF_CAPASSWORD="changeit"
@@ -179,33 +180,9 @@ debugit()
 if [ ! -z $SSL_WATCHDOG_DEBUG ]
     then
         ENV_DEBUG=$SSL_WATCHDOG_DEBUG
-        # case $SSL_WATCHDOG_DEBUG in
-        #     0)
-        #         debug_level=0
-        #         debugit DEBUG "debug_level set to '${debug_level}'"
-        #     ;;
-        #     1)
-        #         debug_level=1 
-        #         debugit DEBUG "debug_level set to '${debug_level}'"
-        #     ;;
-        #     2)
-        #         debug_level=2 
-        #         debugit DEBUG "debug_level set to '${debug_level}'"
-        #     ;;
-        #     3)
-        #         debug_level=3 
-        #         debugit DEBUG "debug_level set to '${debug_level}'"
-        #     ;;
-        #     4)
-        #         debug_level=4 
-        #         debugit DEBUG "debug_level set to '${debug_level}'"
-        #     ;;
-        #     *)
-        #         debugit WARNING "Debug level SSL_WATCHDOG_DEBUG='$SSL_WATCHDOG_DEBUG' is invalid!\n\tPlease ensure this env var is empty, or set to a valid level of 1 to 4.\n"
-        #     ;;
-        # esac
 fi
 
+        
 
 ###############################################################################
 ## Help
@@ -398,10 +375,10 @@ while getopts "${optspec}" opt
                 OPT_DATADIR=${OPTARG}
             ;;
             f)
-                OPT_JAVA=${OPTARG}
+                OPT_INFILE=${OPTARG}
             ;;
             j)
-                OPT_INFILE=${OPTARG}
+                OPT_JAVA=${OPTARG}
             ;;
             k)
                 OPT_KEYSTORE=${OPTARG}
@@ -472,66 +449,75 @@ while [ $# -gt 0 ]
         ARG_INFILE=( ${ARG_INFILE[@]} $1 )
         shift
     done
-
+debugit DEBUG "Arguments found: '${ARG_INFILE[@]}'"
 
 ###############################################################################
 ## Environment Variable Processing
 ###############################################################################
+debugit DEBUG "Parsing environment variables"
 
 if [ -z "$SSL_WATCHDOG_DATADIR" ]
     then
         ENV_DATADIR=""
     else
         ENV_DATADIR="$SSL_WATCHDOG_DATADIR"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_DATADIR' found. Setting 'ENV_DATADIR' to ${ENV_DATADIR}"
 fi
 if [ -z "$SSL_WATCHDOG_CAPASSWORD" ]
     then
         ENV_CAPASSWORD=""
     else
         ENV_CAPASSWORD="$SSL_WATCHDOG_CAPASSWORD"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_CAPASSWORD' found. Setting 'ENV_CAPASSWORD' to ${ENV_CAPASSWORD}"
 fi
 if [ -z "$SSL_WATCHDOG_INFILE" ]
     then
         ENV_INFILE=""
     else
         ENV_INFILE="$SSL_WATCHDOG_INFILE"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_INFILE' found. Setting 'ENV_INFILE' to ${ENV_INFILE}"
 fi
 if [ -z "$SSL_WATCHDOG_JAVA" ]
     then
         ENV_JAVA=""
     else
         ENV_JAVA="$SSL_WATCHDOG_JAVA"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_JAVA' found. Setting 'ENV_JAVA' to ${ENV_JAVA}"
 fi
 if [ -z "$SSL_WATCHDOG_KEYSTORE" ]
     then
         ENV_KEYSTORE=""
     else
         ENV_KEYSTORE="$SSL_WATCHDOG_KEYSTORE"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_KEYSTORE' found. Setting 'ENV_KEYSTORE' to ${ENV_KEYSTORE}"
 fi
 if [ -z "$SSL_WATCHDOG_PORT" ]
     then
         ENV_PORT=""
     else
         ENV_PORT="$SSL_WATCHDOG_PORT"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_PORT' found. Setting 'ENV_PORT' to ${ENV_PORT}"
 fi
 if [ -z "$SSL_WATCHDOG_SERVER" ]
     then
         ENV_PORT=""
     else
         ENV_PORT="$SSL_WATCHDOG_SERVER"
+        debugit DEBUG "EnvVar 'SSL_WATCHDOG_SERVERD' found. Setting 'ENV_SERVER' to ${ENV_SERVER}"
 fi
 
 
 
+
 ###############################################################################
-## Process Script Inputs (Defaults, EnvVar, CLI, Config)
+## Digest Script Inputs (Defaults, EnvVar, CLI, Config)
 ###############################################################################
 
 DEBUG_LEVEL=$(SetInputVar ${DEF_DEBUG} ${ENV_DEBUG} ${CFG_DEBUG} ${OPT_DEBUG})
-debugit DEBUG "Set '' to ''"
+debugit DEBUG "Set 'DEBUG_LEVEL' to '${DEBUG_LEVEL}'"
 DATADIR=$(SetInputVar ${DEF_DATADIR} ${ENV_DATADIR} ${CFG_DATADIR} ${OPT_DATADIR})
 debugit DEBUG "Set 'DATADIR' to '${DATADIR}'"
-INFILE=$(SetInputVar ${DEF_INFILE} ${ENV_INFILE} ${CFG_INFILE} ${OPT_INFILE})
+TMP_INFILE=$(SetInputVar ${DEF_INFILE} ${ENV_INFILE} ${CFG_INFILE} ${OPT_INFILE})
 debugit DEBUG "Set 'INFILE' to '${INFILE}'"
 JAVA=$(SetInputVar ${DEF_JAVA} ${ENV_JAVA} ${CFG_JAVA} ${OPT_JAVA})
 debugit DEBUG "Set 'JAVA' to '${JAVA}'"
@@ -542,15 +528,31 @@ debugit DEBUG "Set 'PORT' to '${PORT}'"
 SERVER=$(SetInputVar ${DEF_SERVER} ${ENV_SERVER} ${CFG_SERVER} ${OPT_SERVER})
 debugit DEBUG "Set 'SERVER' to '${SERVER}'"
 
+# Convert to lower case
+SERVER=$(echo ${SERVER} | tr "[A-Z]" "[a-z]")
 # Convert comma separated lists to arrays
 SERVER=( ${SERVER/,/ } )
 debugit DEBUG "Converted comma separated list 'SERVER' to array: '${SERVER[@]}'"
-INFILE=( ${INFILE/,/ } )
-debugit DEBUG "Converted comma separated list 'INFILE' to array: '${INFILE[@]}'"
+TMP_INFILE=( ${TMP_INFILE/,/ } )
+debugit DEBUG "Converted comma separated list 'TMP_INFILE' to array: '${TMP_INFILE[@]}'"
+# Detect if the input file was set by DEF/ENV/CFG/OPT or ARG 
+if [ ! -z ${ARG_INFILE} ] && [ ! -z ${TMP_INFILE} ]
+    then
+        debugit DEBUG "INFILE has been set more than one way."
+        debugit INFO "It looks like the input file was passed in multiple ways, some of which which may have been ignored.\n\tNext time, try using only one method to set the input file."
+        debugit INFO "We have:\n\tDefault input file: '${DEF_INFILE}'\n\tEnvironment Variable: '${ENV_INFILE}'\n\tConfig file: '${CFG_INFILE}'\n\tOption -f: '${OPT_INFILE}'\n\tArgument: ${ARG_INFILE[@]}"
+        debugit WARNING "Ignoring all other input files since the input file(s) '${ARG_INFILE[@]}' was passed as an argument."
+        TMP_INFILE=(${ARG_INFILE[@]})
+fi
 
-# INFILE sanity check
-ARG_INDEX=0
-for f in ${ARG_INFILE}
+
+###############################################################################
+## Sanity checking, and User input sterilization
+###############################################################################
+
+# INFILE sanity check: Exists, and is readable?
+INFILE_INDEX=0
+for f in ${TMP_INFILE[@]}
     do
         if [ -r ${f} ]
             then
@@ -559,9 +561,11 @@ for f in ${ARG_INFILE}
             else
                 debugit DEBUG "File '${f}' either does not exist, or isn't readable."
                 debugit INFO "Please ensure the file '${f}' exists, and has correct permissions set."
-                ARG_INFILE=( $(echo ${ARG_INFILE[@]/${ARG_INFILE[${ARG_INDEX}]}}) )
-                if [ ${#INFILE[@]} -gt 0 ] || ${#ARG_INFILE[@]} -gt 0 ]
+                TMP_INFILE=( $(echo ${TMP_INFILE[@]/${TMP_INFILE[${INFILE_INDEX}]}}) )
+                if [ ${#INFILE[@]} -gt 0 ]
                     then debugit WARNING "Skipping unreadable file '${f}'"
+                    elif [ ${#TMP_INFILE[@]} -gt 0 ]
+                        then debugit WARNING "Skipping unreadable file '${f}'"
                     elif [ ${#SERVER[@]} -gt 0 ]
                         then debugit WARNING "Skipping unreadable file '${f}'"
                     else debugit ERROR "Cannot read file '${f}'. Nothing left to do."
@@ -571,61 +575,136 @@ for f in ${ARG_INFILE}
     done
 debugit DEBUG "Will examine the following files: ${INFILE[@]}"
 
-# TDOD: check if DATADIR is writable
-# TODO: Check if DEBUG_LEVEL is integer between 0-4
-# TODO: Check if JAVA has needed exucutable, and readable binaries
-# TODO: Check if KEYSTORE is writable
-# TODO: Check if port is integer between 1 and 65536
-# TODO: Check if SERVER is a valid hostname
-###############################################################################
-## Funtions
-###############################################################################
+# DATADIR sanity check: Exists, and is writable?
+if [ -d ${DATADIR} ] && [ -w ${DATADIR} ]
+    then
+        debugit DEBUG "DATADIR '${DATADIR}' is valid and writable."
+    else
+        debugit DEBUG "DATADIR '${DATADIR}' is not valid or may not be writable."
+        debugit INFO "Please make sure data directory '${DATADIR}' exists and is writable."
+        debugit ERROR "Cannot write to data directory '${DATADIR}."
+fi
 
+# DEBUG_LEVEL sanity check: Is an integer between 0-4?
+case ${DEBUG_LEVEL} in
+    0|1|2|3|4)
+        debugit DEBUG "Debug level '${DEBUG_LEVEL}' is valid."
+    ;;
+    *)
+        BAD_DEBUG_LEVEL=${DEBUG_LEVEL}
+        DEBUG_LEVEL=3
+        debugit DEBUG "I don't think this is a valid debug level: '${BAD_DEBUG_LEVEL}'"
+        debugit INFO "Debug Level '${BAD_DEBUG_LEVEL}' doesn't seem to be valid. Make sure it is set to a value between 0-4."
+        debugit WARNING "Invalid debug level: ${BAD_DEBUG_LEVEL}. Defaulting to debeug level 3."
+    ;;
+esac
 
+# TODO: JAVA sanity check:  ${JAVA}/bin has needed exucutable, and is readable?
+# TODO: Separate out KEYTOOL, and KEYSTORE checks
+JAVA_DIRS=( ${JAVA} ${JAVA_HOME} ${JRE_HOME} /usr /usr/libexec/java_home /System/Library/Frameworks/JavaVM.framework/Versions/CurrentJDK/Home )
+KEYTOOL_PATH="/bin/keytool"
 
-FindJava()
-    { # determine the path to the keytool java utility, and the java keystore we should be storing our certs in.
-    # TODO: Allow arguments to overwrite var with script args
-    # TODO: Create docstring for this funtion
-    # TODO: Decide if a separate function is needed to handle cacerts/keystore path
-    local java_dirs
-    local keystore_path
-    local keytool_path
+for dir in ${JAVA_DIRS[@]}
+    do
+        debugit DEBUG "Looking for keytool in ${dir}${KEYTOOL_PATH}..."
+        if [ -x ${dir}${KEYTOOL_PATH} ]
+            then
+                JAVA_DIR=${dir}
+                debugit DEBUG "Found keytool in ${dir}${KEYTOOL_PATH}"
+                break
+            else
+                debugit DEBUG "Did not find keytool in ${dir}${KEYTOOL_PATH}"
+                continue
+        fi
+    done
+if [ -z "$JAVA_DIR" ]
+    then
+        JAVA_PATH=$(2>/dev/null which java) && JAVA_DIR=$(2>/dev/null dirname $JAVA_PATH)
+        if [ -z "$JAVA_DIR" ]
+            then
+                debugit DEBUG "JAVA=${JAVA}, JAVA_HOME=${JAVA_HOME}, JRE_HOME=${JRE_HOME}, JAVA_DIR=${JAVA_DIR}, JAVA_PATH=${JAVA_PATH}"
+                debugit INFO "Set the JAVA_HOME environment variable, any try again, or specify the path to your JRE/JDK with '-j /path/to/jdk'"
+                debugit ERROR "Could not determine the path to java. This is required to process certificates"
+        fi
+fi
+KEYTOOL="${JAVA_DIR}${keytool_path}"
+debugit INFO "Using keytool from '${KEYTOOL}'"
 
-    java_dirs=( ${JAVA_HOME} ${JRE_HOME} /usr /usr/libexec/java_home /System/Library/Frameworks/JavaVM.framework/Versions/CurrentJDK/Home )
-    keystore_path="/lib/security/cacerts"
-    keytool_path="/bin/keytool"
+# KEYSTORE sanity check: is writable?
+if [ -w "${KEYSTORE}" ]
+    then
+        debugit DEBUG "Using keystore '${KEYSTORE}'"
+    elif [ -w "${JAVA_DIR}/lib/security/cacerts" ]
+        then
+            debugit DEBUG "Keystore '${KEYSTORE}' either doesn't exist, or isn't writable."
+            debugit INFO "Please ensure keystore '${KEYSTORE}' exists, and is writable."
+            debugit INFO "Found Alternate keystore '${JAVA_DIR}/lib/security/cacerts'"
+            KEYSTORE="${JAVA_DIR}/lib/security/cacerts"
+            debugit DEBUG "Using keystore '${KEYSTORE}'"
+    else
+        debugit DEBUG "Keystore '${KEYSTORE}' either doesn't exist, or isn't writable."
+        debugit INFO "Please ensure keystore '${KEYSTORE}' exists, and is writable."
+        debugit WARNING "Cannot write to keystore '${KEYSTORE}'"
+        KEYSTORE="/dev/null"
+fi
 
-    for dir in ${java_dirs[@]}
-        do
-            debugit DEBUG "Looking for keytool in ${dir}${keytool_path}..."
-            if [ -x ${dir}${keytool} ]
+# PORT sanity check: is an integer between 1 and 65536
+if [[ "${PORT}" =~ [1-9]{1,5} ]]
+    then
+        if [ ${PORT} -gt 65536 ]
+            then
+                debugit DEBUG "Port value '${PORT}' is invalid."
+                debugit INFO "Please provide a valid port number. Port '${PORT}' is not valid."
+                debugit ERROR "Invalid port number: '${PORT}'"
+            else
+                debugit DEBUG "Port '${PORT}' looks valid."
+        fi
+    else
+        debugit DEBUG "Port value '${PORT}' is invalid."
+        debugit INFO "Please provide a valid port number. Port '${PORT}' is not valid."
+        debugit ERROR "Invalid port number: '${PORT}'"
+fi
+
+# SERVER sanity check: is a valid hostname or IP address?
+
+# TODO: SERVER can be an ARRAY! fix it 
+# TODO: Do we need to accept IP addresses if certs are based on hostnames?
+for box in ${SERVER[@]}
+    do
+        if [[ "${box}" =~ ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]
+            then
+                debugit DEBUG "Server '${box}' appears to be a valid IP address."
+                SERVER_IPS=(${SERVER_IPS[@]} ${box})
+            elif [[ "${box}" =~ ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$ ]]
                 then
-                    JAVA_DIR=${dir}
-                    debugit DEBUG "Found keytool in ${dir}${keytool_path}"
-                    break
-                else
-                    debugit DEBUG "Did not find keytool in ${dir}${keytool_path}"
-                    continue
-            fi
-            if [ -z "$JAVA_DIR" ]
-                then
-                    JAVA_PATH=$(2>/dev/null which java)
-                    JAVA_DIR=$(2>/dev/null dirname $JAVA_PATH)
-                    if [ -z "$JAVA_DIR" ]
+                    debugit DEBUG "Server '${box}' appears to be a valid hostname"
+                    if SERVER_IP=($(2>&1 host "${box}" | awk '/has address/ {print $NF}') )
                         then
-                            debugit DEBUG "JAVA_HOME=${JAVA_HOME}, JRE_HOME=${JRE_HOME}, JAVA_DIR=${JAVA_DIR}, JAVA_PATH=${JAVA_PATH}"
-                            debugit INFO "Set the JAVA_HOME environment variable, any try again, or specify the path to your JRE/JDK with '-j /path/to/jdk'"
-                            debugit ERROR "Could not determine the path to java."
+                            debugit DEBUG "Was able to resolve ${box} to IP address ${SERVER_IP[@]}"
+                            SERVER_IPS=(${SERVER_IPS[@]} ${SERVER_IP[@]})
                         else
-                            break
-                    fi
-            fi
-        done
-        KEYSTORE="${JAVA_DIR}${keystore_path}"
-        KEYTOOL="${JAVA_DIR}${keytool_path}"
-        debugit INFO "Using ${KEYTOOL}, and ${KEYSTORE}"
-    }
+                            debugit DEBUG "Failed to resolve '${box}' to IP address. Got '${SERVER_IP[@]}'"
+                            debugit INFO "Failed to resolve '${box}' to a valid IP address."
+                            debugit WARNING "Host '${box}' cannot be resolved."
+            else
+                debugit DEBUG "I don't think '${SERVER}' is a valid hostname or IP address."
+                debugit INFO "the specified server '${SERVER}' doesn't appear to be a valid hostname or IP address. Make sure you are not passing a protocol like 'https://' as part of the server name."
+                debugit WARNING "Unable to investigate certificate at server '${SERVER}'."
+        fi
+    done
+if [ ${#SERVER_IPS[@]} -eq 0 ]
+    then
+        debugit DEBUG "No valid server was provided."
+    else
+        debugit DEBUG "Have the following "
+
+###############################################################################
+## Business Funtions
+###############################################################################
+
+
+
+
 
 PullCert()
     { # Pull SSL certificate from $server at $port
@@ -672,14 +751,13 @@ PullCert()
         then
             debugit DEBUG "there don't seem to be any arguments remaining for 'outfile'. Have the following args: '$@'"
             debugit INFO "Using default output path '${DATADIR}/${server}.cer'"
-            outfile=${DATADIR}/${server}.cer
+            outfile="${DATADIR}/${server}.cer"
         else
             debugit DEBUG "setting 'outfile' to $1"
             outfile=$1
             shift
     fi
-    fi
-        if [ $# -gt 0 ]
+    if [ $# -gt 0 ]
         then
             debugit DEBUG "Have the following args: '$@'"
             debugit ERROR "INTERNAL ERROR - Too many arguments to PullCert()."
@@ -695,3 +773,8 @@ PullCert()
             debugit DEBUG "$(cat ${outfile})"
     fi
     }
+
+
+###############################################################################
+## Business Logic
+###############################################################################
