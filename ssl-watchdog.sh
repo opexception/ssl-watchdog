@@ -36,11 +36,11 @@ NOW=$(date -u +%s)
 # Setup some default values
 DEF_PORT=443
 
-#DEF_DEBUG=0 # Silent. No additional debug output at all
-#DEF_DEBUG=1 # Write only ERRORs to stderr
-#DEF_DEBUG=2 # Write ERRORs to stderr, and WARNINGs to stdout
-#DEF_DEBUG=3 # Write ERRORs to stderr, WARNINGs and INFOs to stdout
-DEF_DEBUG=4 # Write ERRORs to stderr, WARNINGs, INFOs, and DEBUGs to stdout
+#DEF_DEBUG_LEVEL=0 # Silent. No additional debug output at all
+#DEF_DEBUG_LEVEL=1 # Write only ERRORs to stderr
+#DEF_DEBUG_LEVEL=2 # Write ERRORs to stderr, and WARNINGs to stdout
+#DEF_DEBUG_LEVEL=3 # Write ERRORs to stderr, WARNINGs and INFOs to stdout
+DEF_DEBUG_LEVEL=4 # Write ERRORs to stderr, WARNINGs, INFOs, and DEBUGs to stdout
 
 DEF_DATADIR="."
 DEF_INFILE=""
@@ -170,9 +170,9 @@ debugit()
             esac
         ;;
         *)
-            echo "INTERNAL ERROR - Invalid debug level '${debug_level}'"
-            # echo "Setting debug level to default of ${DEF_DEBUG}"
-            # debug_level=${DEF_DEBUG}
+            echo "INTERNAL ERROR - Invalid debug level '${DEBUG_LEVEL}'"
+            # echo "Setting debug level to default of ${DEF_DEBUG_LEVEL}"
+            # DEBUG_LEVEL=${DEF_DEBUG_LEVEL}
         ;;
     esac
     }
@@ -195,25 +195,27 @@ disp_help()
         echo -e "\nTool to examine SSL certificates, and provide notice if there is a condition that needs attention.\n"    
         echo -e "\tUsage: $0 [COMMAND] {OPTIONS} [ARGUMENTS]"
         echo -e "\nCommands:"
-        echo -e "\tex\t- Example command"
+        echo -e "\tdump\t- dump the cert file to datadir."
+        echo -e "\tcheck\t- check the cert expiration."
+        echo -e "\tipdate\t- update the keystore with current certificates."
         echo -e "\nOptions:"
-        echo -e "\t-P\n\tor\n\t--password"
+        echo -e "\t-P | --password"
         echo -e "\t\t\tThe password to the java keysotre/cacerts file.\n"
-        echo -e "\t-d\n\tor\n\t--data|--datadir"
+        echo -e "\t-d | --data | --datadir"
         echo -e "\t\t\tThe directory used to store output data.\n"
-        echo -e "\t-f\n\tor\n\t--file"
+        echo -e "\t-f | --file"
         echo -e "\t\t\tCertificate file to examine.\n"
-        echo -e "\t-h\n\tor\n\t--help"
+        echo -e "\t-h | --help"
         echo -e "\t\t\tPrint this help message."
-        echo -e "\t-j\n\tor\n\t--java|--jdk|--jre"
+        echo -e "\t-j | --java | --jdk | --jre"
         echo -e "\t\t\tPath to the Java runtime. E.g. '/opt/java'.\n"
-        echo -e "\t-k\n\tor\n\t--keystore|--cacerts"
+        echo -e "\t-k | --keystore | --cacerts"
         echo -e "\t\t\tthe path to the java keystore (cacerts file) to operate on.\n"
-        echo -e "\t-p\n\tor\n\t--port"
+        echo -e "\t-p | --port"
         echo -e "\t\t\tSSL Port that should be examined on the server. Requires '-s'\n"
-        echo -e "\t|-s\n\tor\n\t--server"
+        echo -e "\t|-s | --server"
         echo -e "\t\t\tSSL server to examine.\n"
-        echo -e "\t-v|-vv|-vvv|-vvvv\n\tor\n\t--verbose"
+        echo -e "\t-v | -vv | -vvv | -vvvv | --verbose"
         echo -e "\t\t\tSet verbosity level 0-4:\n\t\t\t0=silent\n\t\t\t1=errors only\n\t\t\t2=errors and warnings\n\t\t\t3=errors, warnings, and info\n\t\t\t4=full debug output\n"
         echo -e "\nArguments:"
         echo -e "\t- FILENAME1 ... FILENAMEn\n\t\tWhere FILENAME is the name of a cert file(s) to examine."
@@ -230,12 +232,12 @@ disp_help()
     }
 
 ###############################################################################
-## Helper Functions
+## Early Init Helper Functions
 ###############################################################################
 SetInputVar()
     { # Take a list of potential inputs for a given parameter, and use the one with the hiest priority.
       #
-      # Since there are many way to set a single parameter (Default, EnvVar, CLI, ...)
+      # Since there are many ways to set a single parameter (Default, EnvVar, CLI, ...)
       # we may have a case where we have several, possibly different values for the same single parameter.
       # This funtion expects a list of potential arguments in priority order (lowest priority first, highest last), 
       # and simply sets the last one as the variable output. Arguments may be an empty string. In such a case, it is simply skipped.
@@ -248,14 +250,17 @@ SetInputVar()
     }
 
 
-DEBUG_LEVEL=$(SetInputVar ${DEF_DEBUG} ${ENV_DEBUG} ${CFG_DEBUG} ${OPT_DEBUG})
+DEBUG_LEVEL=$(SetInputVar ${DEF_DEBUG_LEVEL} ${ENV_DEBUG} ${CFG_DEBUG} ${OPT_DEBUG})
 debugit DEBUG "DEBUG_LEVEL set to ${DEBUG_LEVEL}"
 
 ###############################################################################
 ## CLI processing: Command, Options, and Arguments
 ###############################################################################
 
-# Commands
+
+## Commands
+###############################################################################
+
 if [ $# -ge 1 ]
     then
         debugit DEBUG "Parsing command"
@@ -266,7 +271,13 @@ if [ $# -ge 1 ]
                 debugit DEBUG "Command specified is: ${commandArg}"
 
                 case ${commandArg} in
-                    yyyy)
+                    dump)
+                        debugit DEBUG "Recognized command: ${commandArg}"
+                    ;;
+                    check)
+                        debugit DEBUG "Recognized command: ${commandArg}"
+                    ;;
+                    update)
                         debugit DEBUG "Recognized command: ${commandArg}"
                     ;;
                     *)
@@ -282,20 +293,15 @@ if [ $# -ge 1 ]
         disp_help
 fi
 
-# Options
+## Options
+###############################################################################
+
 optspec="P:d:f:hj:k:p:s:v:"
 while getopts "${optspec}" opt
     do
         case "${opt}" in
             -)
                 case "${OPTARG}" in
-                    xxxx)
-                        OPT_xxxx="${!OPTIND}"
-                        (( OPTIND++ ))
-                    ;;
-                    xxxx=*)
-                        OPT_xxxx=${OPTARG#*=}
-                    ;;
                     data|datadir)
                         OPT_DATADIR="${!OPTIND}"
                         (( OPTIND++ ))
@@ -341,29 +347,12 @@ while getopts "${optspec}" opt
                     verbose)
                         OPT_DEBUG="${!OPTIND}"
                         (( OPTIND++ ))
-                        debugit DEBUG "debug_level set to '${OPT_DEBUG}'"
+                        debugit DEBUG "DEBUG_LEVEL set to '${OPT_DEBUG}'"
                     ;;
                     verbose=*)
                         OPT_DEBUG=${OPTARG#*=}
-                        debugit DEBUG "debug_level set to '${OPT_DEBUG}'"
+                        debugit DEBUG "DEBUG_LEVEL set to '${OPT_DEBUG}'"
                     ;;
-                    # v|vv|vvv|vvvv)
-                    #     case "${OPTARG}" in
-                    #         v)
-                    #             debug_level=1
-                    #         ;;
-                    #         vv)
-                    #             debug_level=2
-                    #         ;;
-                    #         vvv)
-                    #             debug_level=3
-                    #         ;;
-                    #         vvvv)
-                    #             debug_level=4
-                    #         ;;
-                    #     esac
-                    #     debugit DEBUG "debug_level set to '${debug_level}'"
-                    # ;;
                     *)
                         if [ "$OPTERR" = 1 ] && [ "${optspec:0:1}" != ":" ]; then
                             echo "Unknown option --${OPTARG}" >&2
@@ -425,14 +414,14 @@ while getopts "${optspec}" opt
                                 disp_help 1
                             ;;
                         esac
-                        debugit DEBUG "debug_level set to '${OPT_DEBUG}'"
+                        debugit DEBUG "DEBUG_LEVEL set to '${OPT_DEBUG}'"
                     ;;
                     *)
                         >&2 echo "invalid debug level specified: '${OPTARG}'"
                         disp_help 1
                     ;;
                 esac
-                debugit DEBUG "debug_level set to '${debug_level}'"
+                debugit DEBUG "DEBUG_LEVEL set to '${DEBUG_LEVEL}'"
             ;;
             h)
                 disp_help 0
@@ -441,7 +430,9 @@ while getopts "${optspec}" opt
     done
 shift $((OPTIND-1))
 
-# Arguments
+## Arguments
+###############################################################################
+
 debugit DEBUG "Parsing arguments"
 ARG_INFILE=()
 while [ $# -gt 0 ]
@@ -454,6 +445,7 @@ debugit DEBUG "Arguments found: '${ARG_INFILE[@]}'"
 ###############################################################################
 ## Environment Variable Processing
 ###############################################################################
+
 debugit DEBUG "Parsing environment variables"
 
 if [ -z "$SSL_WATCHDOG_DATADIR" ]
@@ -513,7 +505,7 @@ fi
 ## Digest Script Inputs (Defaults, EnvVar, CLI, Config)
 ###############################################################################
 
-DEBUG_LEVEL=$(SetInputVar ${DEF_DEBUG} ${ENV_DEBUG} ${CFG_DEBUG} ${OPT_DEBUG})
+DEBUG_LEVEL=$(SetInputVar ${DEF_DEBUG_LEVEL} ${ENV_DEBUG} ${CFG_DEBUG} ${OPT_DEBUG})
 debugit DEBUG "Set 'DEBUG_LEVEL' to '${DEBUG_LEVEL}'"
 DATADIR=$(SetInputVar ${DEF_DATADIR} ${ENV_DATADIR} ${CFG_DATADIR} ${OPT_DATADIR})
 debugit DEBUG "Set 'DATADIR' to '${DATADIR}'"
@@ -530,6 +522,7 @@ debugit DEBUG "Set 'SERVER' to '${SERVER}'"
 
 # Convert to lower case
 SERVER=$(echo ${SERVER} | tr "[A-Z]" "[a-z]")
+debugit DEBUG "Changed case of  'SERVER' to lower case: '${SERVER}'"
 # Convert comma separated lists to arrays
 SERVER=( ${SERVER/,/ } )
 debugit DEBUG "Converted comma separated list 'SERVER' to array: '${SERVER[@]}'"
@@ -651,7 +644,7 @@ fi
 # PORT sanity check: is an integer between 1 and 65536
 if [[ "${PORT}" =~ [1-9]{1,5} ]]
     then
-        if [ ${PORT} -gt 65536 ]
+        if [ ${PORT} -gt 65535 ]
             then
                 debugit DEBUG "Port value '${PORT}' is invalid."
                 debugit INFO "Please provide a valid port number. Port '${PORT}' is not valid."
@@ -764,7 +757,7 @@ PullCert()
     fi
 
     debugit INFO "Will pull cert from ${server}:${port}"
-    ${KEYTOOL} -printcert -sslserver ${server}:${port} -rfc > ${outfile}
+    ${tool} -printcert -sslserver ${server}:${port} -rfc > ${outfile}
     if (( $! != 0 ))
         then
             debugit ERROR "Unable to reliably store certificate."
