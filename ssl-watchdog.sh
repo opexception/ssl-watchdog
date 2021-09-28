@@ -690,6 +690,7 @@ if [ ${#SERVER_IPS[@]} -eq 0 ]
         debugit DEBUG "No valid server was provided."
     else
         debugit DEBUG "Have the following "
+fi
 
 ###############################################################################
 ## Business Funtions
